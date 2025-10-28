@@ -3,3 +3,5 @@ ahpy
 pandas
 numpy
 plotly
+streamlit-lottie
+requests
