@@ -8,11 +8,12 @@ import numpy as np
 import plotly.graph_objects as go 
 
 # --- 1. Настройка страницы ---
-st.set_page_config(layout="wide", page_title="AHP: Платформа для Коллаборации")
-st.title("🚀 Level 7+6: Финальная AHP-Платформа")
+st.set_page_config(layout="wide", page_title="Платформа для AHP-Анализа")
+st.title("Платформа для Группового Принятия Решений (AHP)")
 st.write("Создавайте проекты, сохраняйте/загружайте сессии, получайте AI-анализ, экспортируйте опросники и загружайте ответы для группового решения.")
 
 # --- 2. "Память" Streamlit (st.session_state) ---
+# Инициализируем "память" для хранения списков, если их еще нет
 if 'criteria_input' not in st.session_state:
     st.session_state.criteria_input = "Удобство\nФункционал\nСтоимость\nПоддержка"
 if 'alternatives_input' not in st.session_state:
@@ -32,6 +33,7 @@ saaty_scale_values = {
 
 # --- 4. Хелпер-функции (ввода, слайдеров, загрузки/выгрузки) ---
 def get_lists_from_state():
+    """Читает 'память' и возвращает чистые списки"""
     criteria = [line.strip() for line in st.session_state.criteria_input.split('\n') if line.strip()]
     alternatives = [line.strip() for line in st.session_state.alternatives_input.split('\n') if line.strip()]
     if len(criteria) != len(set(criteria)) or len(alternatives) != len(set(alternatives)):
@@ -40,6 +42,7 @@ def get_lists_from_state():
     return criteria, alternatives
 
 def create_comparison(key_prefix, item_a, item_b):
+    """Динамически создает select_slider и сохраняет его значение в st.session_state."""
     session_key = f"{key_prefix}_{item_a}_{item_b}"
     if session_key not in st.session_state: st.session_state[session_key] = 1 
     current_val = st.session_state[session_key]
@@ -69,8 +72,12 @@ def load_session_data(data):
     except Exception as e:
         st.error(f"Ошибка чтения файла: {e}")
 
-# --- 5. (Level 7a) Функция Агрегации ---
+# --- 5. Функция Агрегации ---
 def aggregate_expert_data(expert_files):
+    """
+    Принимает список загруженных файлов, возвращает один словарь 
+    с геометрическим средним всех оценок.
+    """
     all_judgments = {}
     
     for file in expert_files:
@@ -93,8 +100,11 @@ def aggregate_expert_data(expert_files):
     
     return aggregated_data
 
-# --- 6. (Level 6b) Функция-СИМУЛЯТОР AI ---
+# --- 6. Функция-СИМУЛЯТОР AI ---
 def get_ai_analysis(final_weights, criteria_weights, cr_data):
+    """
+    Это симулятор. В реальном проекте здесь был бы вызов API.
+    """
     with st.spinner("🤖 AI-Аналитик изучает ваши данные..."):
         time.sleep(3) # Симуляция работы
 
@@ -115,8 +125,11 @@ def get_ai_analysis(final_weights, criteria_weights, cr_data):
 
     return recommendation, consistency_report
 
-# --- 7. (Level 7b) Функция расчета AHP ---
+# --- 7. Функция расчета AHP ---
 def calculate_ahp(session_data):
+    """
+    Основная функция расчета. Принимает словарь с данными, возвращает результаты.
+    """
     try:
         criteria = [line.strip() for line in session_data['criteria_input'].split('\n') if line.strip()]
         alternatives = [line.strip() for line in session_data['alternatives_input'].split('\n') if line.strip()]
@@ -154,7 +167,7 @@ def calculate_ahp(session_data):
         st.error(f"Ошибка расчета: {e}")
         return None, None, None, None, None
 
-# --- 8. (Level 7c) Функция для Радар-Графика ---
+# --- 8. Функция для Радар-Графика ---
 def create_radar_chart(profiles, criteria):
     fig = go.Figure()
     for alt, values in profiles.items():
@@ -179,9 +192,8 @@ with st.sidebar:
     st.text_area("Альтернативы", key="alternatives_input", height=100)
     
     st.divider()
-    st.header("2. Управление Сессией (L6)")
+    st.header("2. Управление Сессией")
     
-    # (Level 6a) Сохранение
     export_data = get_session_data()
     st.download_button(
         label="💾 Скачать Сессию (.json)",
@@ -190,7 +202,6 @@ with st.sidebar:
         mime="application/json"
     )
     
-    # (Level 6a) Загрузка
     uploaded_file = st.file_uploader("Загрузить Сессию (.json)", type="json")
     if uploaded_file:
         load_session_data(json.load(uploaded_file))
@@ -198,8 +209,8 @@ with st.sidebar:
 # --- 10. СОЗДАНИЕ ВКЛАДОК ---
 tab1, tab2, tab3, tab4 = st.tabs([
     "✍️ Ввод Оценок (Эксперт)", 
-    "🤝 Групповой Анализ (L7)", 
-    "📊 Результаты и Аналитика (L6/7)", 
+    "🤝 Групповой Анализ", 
+    "📊 Результаты и Аналитика", 
     "📖 О Методе"
 ])
 
@@ -275,7 +286,7 @@ with tab3:
         if len(sorted_weights) > 2: col3.metric(label=f"🥉 3-е Место", value=sorted_weights[2][0], delta=f"{sorted_weights[2][1]:.2%}")
 
         st.divider()
-        st.subheader("Продвинутая Визуализация (L7)")
+        st.subheader("Продвинутая Визуализация")
         
         col_chart1, col_chart2 = st.columns(2)
         with col_chart1:
@@ -306,8 +317,8 @@ with tab3:
         
         st.divider()
         
-        # --- (Level 6b) Кнопка AI-Анализа ---
-        st.subheader("AI-Аналитик (L6)")
+        # --- Кнопка AI-Анализа ---
+        st.subheader("AI-Аналитик")
         if st.button("🤖 Попросить ИИ проанализировать результат"):
             rec, cons = get_ai_analysis(final_w, criteria_w, cr_data)
             st.info(f"**AI-Вывод по Рекомендации:**\n\n{rec}")
@@ -331,7 +342,7 @@ with tab4:
     2.  **Шкала Саати:** Для сравнения используется шкала от 1 (равная важность) до 9 (абсолютное превосходство).
     3.  **Расчет Весов:** На основе этих парных сравнений математически вычисляются "веса" (приоритеты).
     
-    ### (Level 7) Групповые Решения
+    ### Групповые Решения
     Этот инструмент использует **Метод Агрегирования Индивидуальных Суждений (Aggregation of Individual Judgements, AIJ)**. 
     1.  Каждый эксперт заполняет свой "бюллетень".
     2.  Система собирает все ответы (например, на `Цена vs Качество` эксперт 1 дал `3`, эксперт 2 дал `5`).
@@ -343,4 +354,3 @@ with tab4:
     * **CR < 0.1 (или 10%)**: Отлично. Суждения логичны.
     * **CR > 0.1 (или 10%)**: Плохо. Суждения противоречивы, результатам доверять нельзя.
     """)
-    
