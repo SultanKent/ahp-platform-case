@@ -4,22 +4,63 @@ import pandas as pd
 import itertools
 import json
 import time
-import numpy as np 
-import plotly.graph_objects as go 
+import numpy as np
+import plotly.graph_objects as go
+import requests
+from streamlit_lottie import st_lottie
 
-# --- 1. Настройка страницы ---
+# --- 1. Функция Lottie ---
+def load_lottie_url(url: str):
+    """Загружает Lottie анимацию по URL."""
+    try:
+        r = requests.get(url, timeout=5)
+        if r.status_code != 200: return None
+        return r.json()
+    except Exception: return None
+
+# --- 2. Настройка страницы ---
 st.set_page_config(layout="wide", page_title="Платформа для AHP-Анализа")
-st.title("Платформа для Группового Принятия Решений (AHP)")
-st.write("Создавайте проекты, сохраняйте/загружайте сессии, получайте AI-анализ, экспортируйте опросники и загружайте ответы для группового решения.")
 
-# --- 2. "Память" Streamlit (st.session_state) ---
-# Инициализируем "память" для хранения списков, если их еще нет
+# --- 3. (АНИМАЦИЯ) CSS ---
+st.markdown("""
+    <style>
+    /* Анимация плавного появления */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Базовый класс */
+    .fade-in-base {
+        opacity: 0; /* Начинаем невидимым */
+        animation: fadeIn 0.8s ease-out forwards; /* Применяем анимацию */
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 4. Загрузка Анимаций ---
+lottie_header_url = "https://lottie.host/e0d4d0c9-1d48-43d7-9907-3f3603d6d6c4/Bf9pzxqT9z.json"
+lottie_header_json = load_lottie_url(lottie_header_url)
+lottie_success_url = "https://lottie.host/5b217b1d-91b6-4b2a-888a-36d713c70f80/vI0cYSgLNj.json"
+lottie_success_json = load_lottie_url(lottie_success_url)
+
+# --- 5. Отображение Заголовка (С АНИМАЦИЕЙ) ---
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.markdown('<div class="fade-in-base"><h1>Платформа для Группового Принятия Решений (AHP)</h1></div>', unsafe_allow_html=True)
+    # Используем CSS класс с задержкой для второго элемента
+    st.markdown('<div class="fade-in-base" style="animation-delay: 0.2s;"><p>Создавайте проекты, сохраняйте/загружайте сессии, получайте AI-анализ, экспортируйте опросники и загружайте ответы для группового решения.</p></div>', unsafe_allow_html=True)
+with col2:
+    if lottie_header_json:
+        st_lottie(lottie_header_json, height=150, width=150, speed=1, loop=True, quality='high', key="header_lottie")
+
+# --- 6. "Память" Streamlit ---
 if 'criteria_input' not in st.session_state:
     st.session_state.criteria_input = "Удобство\nФункционал\nСтоимость\nПоддержка"
 if 'alternatives_input' not in st.session_state:
     st.session_state.alternatives_input = "Platform A\nPlatform B\nPlatform C"
 
-# --- 3. Шкала Саати ---
+# --- 7. Шкала Саати ---
 saaty_scale_labels = [
     "B в 9 раз важнее", "B в 7 раз важнее", "B в 5 раз важнее", "B в 3 раза важнее",
     "Равная важность",
@@ -31,9 +72,8 @@ saaty_scale_values = {
     "A в 3 раза важнее": 3, "A в 5 раз важнее": 5, "A в 7 раз важнее": 7, "A в 9 раз важнее": 9
 }
 
-# --- 4. Хелпер-функции (ввода, слайдеров, загрузки/выгрузки) ---
+# --- 8. Хелпер-функции ---
 def get_lists_from_state():
-    """Читает 'память' и возвращает чистые списки"""
     criteria = [line.strip() for line in st.session_state.criteria_input.split('\n') if line.strip()]
     alternatives = [line.strip() for line in st.session_state.alternatives_input.split('\n') if line.strip()]
     if len(criteria) != len(set(criteria)) or len(alternatives) != len(set(alternatives)):
@@ -42,9 +82,8 @@ def get_lists_from_state():
     return criteria, alternatives
 
 def create_comparison(key_prefix, item_a, item_b):
-    """Динамически создает select_slider и сохраняет его значение в st.session_state."""
     session_key = f"{key_prefix}_{item_a}_{item_b}"
-    if session_key not in st.session_state: st.session_state[session_key] = 1 
+    if session_key not in st.session_state: st.session_state[session_key] = 1
     current_val = st.session_state[session_key]
     default_label = min(saaty_scale_values.keys(), key=lambda k: abs(saaty_scale_values[k] - current_val))
     slider_label = f"**{item_a}** (A) vs **{item_b}** (B)"
@@ -52,34 +91,20 @@ def create_comparison(key_prefix, item_a, item_b):
     st.session_state[session_key] = saaty_scale_values[selected_label]
 
 def get_session_data():
-    """Собирает ВСЕ данные из session_state в один JSON"""
     return {k: v for k, v in st.session_state.items() if not k.startswith(('slider_', 'last_results'))}
 
 def load_session_data(data):
-    """Загружает данные из JSON в session_state"""
     try:
-        # Очищаем память перед загрузкой, чтобы не было "хвостов"
         keys_to_clear = [k for k in st.session_state.keys()]
-        for k in keys_to_clear:
-            del st.session_state[k]
-        
-        # Загружаем новые данные
-        for k, v in data.items():
-            st.session_state[k] = v
+        for k in keys_to_clear: del st.session_state[k]
+        for k, v in data.items(): st.session_state[k] = v
         st.success("✅ Сессия успешно загружена! Все данные восстановлены.")
         time.sleep(1)
         st.rerun()
-    except Exception as e:
-        st.error(f"Ошибка чтения файла: {e}")
+    except Exception as e: st.error(f"Ошибка чтения файла: {e}")
 
-# --- 5. Функция Агрегации ---
 def aggregate_expert_data(expert_files):
-    """
-    Принимает список загруженных файлов, возвращает один словарь 
-    с геометрическим средним всех оценок.
-    """
     all_judgments = {}
-    
     for file in expert_files:
         file.seek(0)
         data = json.load(file)
@@ -87,138 +112,119 @@ def aggregate_expert_data(expert_files):
             if '_' in key and not key.startswith('criteria_') and not key.startswith('alternatives_'):
                 if key not in all_judgments: all_judgments[key] = []
                 all_judgments[key].append(value)
-    
     aggregated_data = {}
     for key, values in all_judgments.items():
         geo_mean = np.prod(values) ** (1/len(values))
         aggregated_data[key] = geo_mean
-    
     expert_files[0].seek(0)
     base_data = json.load(expert_files[0])
     aggregated_data['criteria_input'] = base_data['criteria_input']
     aggregated_data['alternatives_input'] = base_data['alternatives_input']
-    
     return aggregated_data
 
-# --- 6. Функция-СИМУЛЯТОР AI ---
-def get_ai_analysis(final_weights, criteria_weights, cr_data):
-    """
-    Это симулятор. В реальном проекте здесь был бы вызов API.
-    """
+# --- 9. AI-Аналитик (Эффект "Печатной машинки") ---
+def get_ai_analysis_stream(final_weights, criteria_weights, cr_data):
+    """Это ГЕНЕРАТОР, он использует `yield` для "печатания" текста."""
     with st.spinner("🤖 AI-Аналитик изучает ваши данные..."):
-        time.sleep(3) # Симуляция работы
+        time.sleep(2)
 
     sorted_weights = sorted(final_weights.items(), key=lambda item: item[1], reverse=True)
     winner_name = sorted_weights[0][0]
     best_crit_name = max(criteria_weights, key=criteria_weights.get)
 
     recommendation = f"**Рекомендация:** Оптимальный выбор — **{winner_name}** (с весом {sorted_weights[0][1]:.1%}).\n\n"
-    recommendation += f"**Обоснование:** Этот выбор обусловлен тем, что '{best_crit_name}' был выбран как самый важный критерий (вес {criteria_weights[best_crit_name]:.1%}). {winner_name} показывает сильные результаты по нему (или по совокупности других критериев)."
-    
+    recommendation += f"**Обоснование:** Этот выбор обусловлен тем, что '{best_crit_name}' был выбран как самый важный критерий (вес {criteria_weights[best_crit_name]:.1%})."
+
     inconsistent_matrices = [name for name, cr in cr_data.items() if cr > 0.1]
-    
+
     if not inconsistent_matrices:
-        consistency_report = "**Согласованность: Идеальная.**\n\nВсе Индексы Согласованности (CR) ниже 0.10. Это означает, что ваши суждения логичны и не противоречат друг другу. Результатам можно полностью доверять."
+        consistency_report = "**Согласованность: Идеальная.**\n\nВсе Индексы Согласованности (CR) ниже 0.10. Ваши суждения логичны."
     else:
-        consistency_report = f"**Согласованность: ⚠️ НИЗКАЯ!**\n\nРезультатам **нельзя доверять**. Обнаружены серьезные противоречия в следующих матрицах: **{', '.join(inconsistent_matrices)}**.\n\n"
-        consistency_report += "**Пример:** Если CR 'Матрицы \"Стоимость\"' высокий, это значит, что вы, возможно, сказали 'A > B', 'B > C', но при этом 'C > A' при сравнении по стоимости. **Пожалуйста, пересмотрите свои оценки в этих матрицах.**"
+        consistency_report = f"**Согласованность: ⚠️ НИЗКАЯ!**\n\nРезультатам **нельзя доверять**. Обнаружены противоречия в матрицах: **{', '.join(inconsistent_matrices)}**.\n\n"
+        consistency_report += "**Пример:** Если CR 'Матрицы \"Стоимость\"' высокий, это значит, что вы, возможно, сказали 'A > B', 'B > C', но при этом 'C > A' при сравнении по стоимости."
 
-    return recommendation, consistency_report
+    # "Печатаем" первый блок
+    st.info("**AI-Вывод по Рекомендации:**")
+    for word in recommendation.split():
+        yield word + " "
+        time.sleep(0.05)
 
-# --- 7. Функция расчета AHP ---
+    yield "\n\n"; time.sleep(1)
+
+    # "Печатаем" второй блок
+    if not inconsistent_matrices:
+        st.success("**AI-Вывод по Согласованности:**")
+        for word in consistency_report.split():
+            yield word + " "; time.sleep(0.05)
+    else:
+        st.error("**AI-Вывод по Согласованности:**")
+        for word in consistency_report.split():
+            yield word + " "; time.sleep(0.05)
+
+# --- 10. Функция расчета AHP ---
 def calculate_ahp(session_data):
-    """
-    Основная функция расчета. Принимает словарь с данными, возвращает результаты.
-    """
     try:
         criteria = [line.strip() for line in session_data['criteria_input'].split('\n') if line.strip()]
         alternatives = [line.strip() for line in session_data['alternatives_input'].split('\n') if line.strip()]
-
         criteria_comps, children_comps = {}, {}
         for pair in itertools.combinations(criteria, 2):
             criteria_comps[pair] = session_data.get(f"crit_{pair[0]}_{pair[1]}", 1)
-        
         for crit in criteria:
             temp_dict = {}
             for pair in itertools.combinations(alternatives, 2):
                 temp_dict[pair] = session_data.get(f"{crit}_{pair[0]}_{pair[1]}", 1)
             children_comps[crit] = temp_dict
-
         children_nodes = [ahpy.Compare(name, comps, precision=4) for name, comps in children_comps.items()]
         root_node = ahpy.Compare("Goal", criteria_comps, precision=4)
         root_node.add_children(children_nodes)
-
         final_weights = root_node.target_weights
         criteria_weights = root_node.local_weights
-        
         cr_data = {'Матрица "Goal" (Критерии)': root_node.consistency_ratio}
-        for child in children_nodes:
-            cr_data[f"Матрица '{child.name}'"] = child.consistency_ratio
-        
+        for child in children_nodes: cr_data[f"Матрица '{child.name}'"] = child.consistency_ratio
         profiles = {}
         for alt in alternatives:
             profiles[alt] = []
             for child in children_nodes:
                 profiles[alt].append(child.local_weights.get(alt, 0))
-        
         return final_weights, criteria_weights, cr_data, profiles, criteria
-
     except Exception as e:
         st.error(f"Ошибка расчета: {e}")
         return None, None, None, None, None
 
-# --- 8. Функция для Радар-Графика ---
+# --- 11. Функция для Радар-Графика ---
 def create_radar_chart(profiles, criteria):
     fig = go.Figure()
     for alt, values in profiles.items():
-        fig.add_trace(go.Scatterpolar(
-            r=values,
-            theta=criteria,
-            fill='toself',
-            name=alt
-        ))
-    fig.update_layout(
-        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-        showlegend=True,
-        title="Профиль Альтернатив по Критериям"
-    )
+        fig.add_trace(go.Scatterpolar(r=values, theta=criteria, fill='toself', name=alt))
+    fig.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 1])), showlegend=True, title="Профиль Альтернатив по Критериям")
     return fig
 
-# --- 9. БОКОВАЯ ПАНЕЛЬ ---
+# --- 12. БОКОВАЯ ПАНЕЛЬ ---
 with st.sidebar:
     st.header("1. Настройка Проекта")
     st.write("Введите критерии и альтернативы. Каждый с новой строки.")
     st.text_area("Критерии", key="criteria_input", height=150)
     st.text_area("Альтернативы", key="alternatives_input", height=100)
-    
     st.divider()
     st.header("2. Управление Сессией")
-    
     export_data = get_session_data()
-    st.download_button(
-        label="💾 Скачать Сессию (.json)",
-        data=json.dumps(export_data, indent=2),
-        file_name="ahp_project_session.json",
-        mime="application/json"
-    )
-    
+    st.download_button(label="💾 Скачать Сессию (.json)", data=json.dumps(export_data, indent=2), file_name="ahp_project_session.json", mime="application/json")
     uploaded_file = st.file_uploader("Загрузить Сессию (.json)", type="json")
     if uploaded_file:
         load_session_data(json.load(uploaded_file))
 
-# --- 10. СОЗДАНИЕ ВКЛАДОК ---
+# --- 13. СОЗДАНИЕ ВКЛАДОК ---
 tab1, tab2, tab3, tab4 = st.tabs([
-    "✍️ Ввод Оценок (Эксперт)", 
-    "🤝 Групповой Анализ", 
-    "📊 Результаты и Аналитика", 
+    "✍️ Ввод Оценок (Эксперт)",
+    "🤝 Групповой Анализ",
+    "📊 Результаты и Аналитика",
     "📖 О Методе"
 ])
 
 # --- ВКЛАДКА 1: ВВОД ОЦЕНОК ---
 with tab1:
-    st.header("Ввод Оценок (Единичный Эксперт)")
+    st.markdown('<h2 class="fade-in-base">Ввод Оценок (Единичный Эксперт)</h2>', unsafe_allow_html=True)
     st.write("Используйте слайдеры для ввода оценок. Вы можете сохранить эту сессию (в боковой панели) как 'бюллетень' и отправить его администратору.")
-    
     criteria_list, alternatives_list = get_lists_from_state()
     if criteria_list and alternatives_list:
         st.subheader("Сравнение Критериев")
@@ -226,7 +232,6 @@ with tab1:
             if len(criteria_list) >= 2:
                 for pair in itertools.combinations(criteria_list, 2): create_comparison("crit", pair[0], pair[1])
             else: st.info("У вас только один критерий.")
-
         st.subheader("Сравнение Альтернатив")
         if len(alternatives_list) >= 2:
             for criterion in criteria_list:
@@ -236,15 +241,11 @@ with tab1:
 
 # --- ВКЛАДКА 2: ГРУППОВОЙ АНАЛИЗ ---
 with tab2:
-    st.header("Агрегация Групповых Решений")
+    st.markdown('<h2 class="fade-in-base">Агрегация Групповых Решений</h2>', unsafe_allow_html=True)
     st.write("Загрузите несколько 'бюллетеней' (.json), заполненных разными экспертами. Система автоматически рассчитает средний (агрегированный) результат.")
-    
-    expert_files = st.file_uploader(
-        "Загрузите 'бюллетени' (.json) от ваших экспертов", 
-        type="json", 
-        accept_multiple_files=True
-    )
-    
+
+    expert_files = st.file_uploader("Загрузите 'бюллетени' (.json) от ваших экспертов", type="json", accept_multiple_files=True)
+
     if expert_files:
         st.write(f"Загружено файлов от {len(expert_files)} экспертов.")
         if st.button("🚀 Рассчитать Групповой Результат"):
@@ -252,87 +253,128 @@ with tab2:
             st.session_state.last_calc_is_group = True
             results = calculate_ahp(aggregated_data)
             st.session_state.last_results = results
-            st.success("✅ Групповой результат рассчитан! Перейдите во вкладку 'Результаты'.")
-            st.balloons()
+
+            # Анимация успеха Lottie
+            placeholder = st.empty()
+            with placeholder.container():
+                st.success("✅ Групповой результат рассчитан!")
+                if lottie_success_json:
+                    st_lottie(lottie_success_json, height=200, width=200, speed=1, loop=False, quality='high', key="lottie_group_success")
+            time.sleep(3) # Показываем 3 секунды
+            placeholder.empty() # Очищаем
+            time.sleep(0.1) # <-- МИКРО-ПАУЗА
 
 # --- ВКЛАДКА 3: РЕЗУЛЬТАТЫ ---
 with tab3:
-    st.header("Итоговые Результаты и Аналитика")
-    
+    st.markdown('<h2 class="fade-in-base">Итоговые Результаты и Аналитика</h2>', unsafe_allow_html=True)
+
     st.write("Нажмите кнопку, чтобы рассчитать результат на основе данных из вкладки 'Ввод Оценок'.")
     if st.button("🚀 Рассчитать Единичный Результат"):
         session_data = get_session_data()
         st.session_state.last_calc_is_group = False
         results = calculate_ahp(session_data)
         st.session_state.last_results = results
-        st.success("✅ Единичный результат рассчитан!")
+
+        # Анимация успеха Lottie
+        placeholder = st.empty()
+        with placeholder.container():
+            st.success("✅ Единичный результат рассчитан!")
+            if lottie_success_json:
+                st_lottie(lottie_success_json, height=200, width=200, speed=1, loop=False, quality='high', key="lottie_single_success")
+        time.sleep(3) # Показываем 3 секунды
+        placeholder.empty() # Очищаем
+        time.sleep(0.1) # <-- МИКРО-ПАУЗА
 
     st.divider()
 
     # --- Зона отображения (показывает последние рассчитанные данные) ---
     if 'last_results' in st.session_state and st.session_state.last_results[0] is not None:
-        
+
         final_w, criteria_w, cr_data, profiles, criteria_names = st.session_state.last_results
-        
+
+        # --- Блок 1: Заголовок типа расчета ---
+        st.markdown('<div class="fade-in-base">', unsafe_allow_html=True)
         if st.session_state.get('last_calc_is_group', False):
             st.subheader("Показан 🤝 Групповой Результат (агрегированный)")
         else:
             st.subheader("Показан ✍️ Единичный Результат")
+        st.markdown('</div>', unsafe_allow_html=True)
+        time.sleep(0.2) # <-- ПАУЗА
 
+        # --- Блок 2: Метрики ---
         col1, col2, col3 = st.columns(3)
         sorted_weights = sorted(final_w.items(), key=lambda item: item[1], reverse=True)
-        if len(sorted_weights) > 0: col1.metric(label=f"🥇 1-е Место", value=sorted_weights[0][0], delta=f"{sorted_weights[0][1]:.2%}")
-        if len(sorted_weights) > 1: col2.metric(label=f"🥈 2-е Место", value=sorted_weights[1][0], delta=f"{sorted_weights[1][1]:.2%}")
-        if len(sorted_weights) > 2: col3.metric(label=f"🥉 3-е Место", value=sorted_weights[2][0], delta=f"{sorted_weights[2][1]:.2%}")
+        
+        with col1:
+            st.markdown('<div class="fade-in-base">', unsafe_allow_html=True) # Анимация 1
+            if len(sorted_weights) > 0: col1.metric(label=f"🥇 1-е Место", value=sorted_weights[0][0], delta=f"{sorted_weights[0][1]:.2%}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        time.sleep(0.2) # <-- ПАУЗА
+
+        with col2:
+            st.markdown('<div class="fade-in-base">', unsafe_allow_html=True) # Анимация 2
+            if len(sorted_weights) > 1: col2.metric(label=f"🥈 2-е Место", value=sorted_weights[1][0], delta=f"{sorted_weights[1][1]:.2%}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        time.sleep(0.2) # <-- ПАУЗА
+        
+        with col3:
+            st.markdown('<div class="fade-in-base">', unsafe_allow_html=True) # Анимация 3
+            if len(sorted_weights) > 2: col3.metric(label=f"🥉 3-е Место", value=sorted_weights[2][0], delta=f"{sorted_weights[2][1]:.2%}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        time.sleep(0.2) # <-- ПАУЗА
 
         st.divider()
+
+        # --- Блок 3: Визуализация ---
+        st.markdown('<div class="fade-in-base">', unsafe_allow_html=True)
         st.subheader("Продвинутая Визуализация")
-        
         col_chart1, col_chart2 = st.columns(2)
         with col_chart1:
             st.write("Итоговый Рейтинг")
             df_final = pd.DataFrame.from_dict(final_w, orient='index', columns=['Вес'])
             st.bar_chart(df_final.sort_values(by='Вес', ascending=False))
-
         with col_chart2:
             st.write("Профили Альтернатив")
             if profiles and criteria_names:
                 fig = create_radar_chart(profiles, criteria_names)
                 st.plotly_chart(fig, use_container_width=True)
-            
+        st.markdown('</div>', unsafe_allow_html=True)
+        time.sleep(0.2) # <-- ПАУЗА
+
         st.divider()
+
+        # --- Блок 4: Таблицы ---
+        st.markdown('<div class="fade-in-base">', unsafe_allow_html=True)
         st.subheader("Детальные таблицы")
-        
         col_table1, col_table2 = st.columns(2)
         with col_table1:
             st.write("Важность Критериев")
             criteria_df = pd.DataFrame.from_dict(criteria_w, orient='index', columns=['Вес'])
             st.dataframe(criteria_df.sort_values(by='Вес', ascending=False).style.format({'Вес': '{:.2%}'}), use_container_width=True)
-        
         with col_table2:
             st.write("Проверка Согласованности (CR)")
             cr_df = pd.DataFrame.from_dict(cr_data, orient='index', columns=['CR'])
             def color_cr(val): return f'background-color: {"#ffc7ce" if val > 0.1 else "#c7ffce"}'
             st.dataframe(cr_df.style.applymap(color_cr).format({'CR': '{:.4f}'}), use_container_width=True)
-        
+        st.markdown('</div>', unsafe_allow_html=True)
+        time.sleep(0.2) # <-- ПАУЗА
+
         st.divider()
-        
-        # --- Кнопка AI-Анализа ---
+
+        # --- Блок 5: AI-Аналитик ---
+        st.markdown('<div class="fade-in-base">', unsafe_allow_html=True)
         st.subheader("AI-Аналитик")
         if st.button("🤖 Попросить ИИ проанализировать результат"):
-            rec, cons = get_ai_analysis(final_w, criteria_w, cr_data)
-            st.info(f"**AI-Вывод по Рекомендации:**\n\n{rec}")
-            if any(cr > 0.1 for cr in cr_data.values()):
-                st.error(f"**AI-Вывод по Согласованности:**\n\n{cons}")
-            else:
-                st.success(f"**AI-Вывод по Согласованности:**\n\n{cons}")
-            
+            # Печатная машинка запускается здесь
+            st.write_stream(get_ai_analysis_stream(final_w, criteria_w, cr_data))
+        st.markdown('</div>', unsafe_allow_html=True)
+
     else:
         st.info("Нажмите одну из кнопок 'Рассчитать...' (в этой вкладке или во вкладке 'Групповой Анализ'), чтобы увидеть результаты.")
 
 # --- ВКЛАДКА 4: О МЕТОДЕ ---
 with tab4:
-    st.header("📖 О Методе (AHP)")
+    st.markdown('<h2 class="fade-in-base">📖 О Методе (AHP)</h2>', unsafe_allow_html=True)
     st.markdown("""
     **Метод Анализа Иерархий (AHP)** — это техника для принятия сложных решений, разработанная Томасом Саати в 1970-х годах. 
     Он помогает структурировать проблему в виде иерархии (Цель -> Критерии -> Альтернативы) и использовать математику для поиска лучшего варианта на основе субъективных суждений экспертов.
